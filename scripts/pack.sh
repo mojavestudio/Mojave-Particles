@@ -7,10 +7,15 @@ STAGE_DIR="$ROOT_DIR/.pack-tmp"
 ZIP_PATH="$ROOT_DIR/plugin.zip"
 
 KEEP_STAGE=0
+KEEP_DIST=0
 for arg in "$@"; do
   case "$arg" in
     --keep-stage)
       KEEP_STAGE=1
+      shift
+      ;;
+    --keep-dist)
+      KEEP_DIST=1
       shift
       ;;
   esac
@@ -63,4 +68,12 @@ if [[ "$KEEP_STAGE" -eq 0 ]]; then
   echo "[pack] Cleaned staging directory $STAGE_DIR"
 else
   echo "[pack] Kept staging directory (requested): $STAGE_DIR"
+fi
+
+# 6) Optionally remove dist to avoid source/build duplicates in workspace
+if [[ "$KEEP_DIST" -eq 0 ]]; then
+  rm -rf "$DIST_DIR"
+  echo "[pack] Removed build directory $DIST_DIR"
+else
+  echo "[pack] Kept build directory (requested): $DIST_DIR"
 fi
