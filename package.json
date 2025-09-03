@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "pack": "npx framer-plugin-tools@latest pack",
     "pack:local": "bash scripts/pack.sh",
+    "clean": "rm -rf dist .pack-tmp plugin.zip",
     "bump:patch": "node scripts/bump-version.js patch",
     "bump:minor": "node scripts/bump-version.js minor",
     "bump:major": "node scripts/bump-version.js major",

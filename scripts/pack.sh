@@ -6,6 +6,16 @@ DIST_DIR="$ROOT_DIR/dist"
 STAGE_DIR="$ROOT_DIR/.pack-tmp"
 ZIP_PATH="$ROOT_DIR/plugin.zip"
 
+KEEP_STAGE=0
+for arg in "$@"; do
+  case "$arg" in
+    --keep-stage)
+      KEEP_STAGE=1
+      shift
+      ;;
+  esac
+done
+
 echo "[pack] Root: $ROOT_DIR"
 
 # 1) Build (prefer npm, then pnpm, then yarn)
@@ -47,3 +57,10 @@ rm -f "$ZIP_PATH"
 echo "[pack] Wrote $ZIP_PATH"
 echo "[pack] Upload plugin.zip in Framer → Creator Dashboard → Your Plugin → New Version"
 
+# 5) Cleanup staging to avoid duplicates alongside dist/
+if [[ "$KEEP_STAGE" -eq 0 ]]; then
+  rm -rf "$STAGE_DIR"
+  echo "[pack] Cleaned staging directory $STAGE_DIR"
+else
+  echo "[pack] Kept staging directory (requested): $STAGE_DIR"
+fi
