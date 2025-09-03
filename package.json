@@ -1,0 +1,42 @@
+{
+  "name": "mojave-particles-pro",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview",
+    "pack": "npx framer-plugin-tools@latest pack",
+    "pack:local": "bash scripts/pack.sh",
+    "bump:patch": "node scripts/bump-version.js patch",
+    "bump:minor": "node scripts/bump-version.js minor",
+    "bump:major": "node scripts/bump-version.js major",
+    "release:patch": "npm run bump:patch && npm run pack",
+    "release:minor": "npm run bump:minor && npm run pack",
+    "release:major": "npm run bump:major && npm run pack"
+  },
+  "dependencies": {
+    "framer-plugin": "^3",
+    "phosphor-react": "^1.4.1",
+    "react": "^18",
+    "react-dom": "^18",
+    "vite-plugin-mkcert": "^1.17.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@vitejs/plugin-react": "^4.3.1",
+    "@vitejs/plugin-react-swc": "^3.11.0",
+    "eslint": "^9.9.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.9",
+    "globals": "^15.9.0",
+    "typescript": "^5.3",
+    "typescript-eslint": "^8.0.1",
+    "vite": "^6",
+    "vite-plugin-framer": "^1.0.7"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "id": "51e920",
+  "name": "Mojave Particles Pro",
+  "version": "1.0.0",
+  "main": "index.html",
+  "modes": [
+    "canvas"
+  ],
+  "icon": "/icon.png?cacheBust=1"
+}

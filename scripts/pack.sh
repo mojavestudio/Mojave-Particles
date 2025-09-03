@@ -1,0 +1,49 @@
+#!/bin/bash
+set -euo pipefail
+
+ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
+DIST_DIR="$ROOT_DIR/dist"
+STAGE_DIR="$ROOT_DIR/.pack-tmp"
+ZIP_PATH="$ROOT_DIR/plugin.zip"
+
+echo "[pack] Root: $ROOT_DIR"
+
+# 1) Build (prefer npm, then pnpm, then yarn)
+if command -v npm >/dev/null 2>&1; then
+  (cd "$ROOT_DIR" && npm run build)
+elif command -v pnpm >/dev/null 2>&1; then
+  (cd "$ROOT_DIR" && pnpm build)
+elif command -v yarn >/dev/null 2>&1; then
+  (cd "$ROOT_DIR" && yarn build)
+else
+  echo "[pack] No package runner found (npm/pnpm/yarn). Aborting." >&2
+  exit 1
+fi
+
+if [[ ! -d "$DIST_DIR" ]]; then
+  echo "[pack] Build did not produce dist/. Aborting." >&2
+  exit 1
+fi
+
+rm -rf "$STAGE_DIR"
+mkdir -p "$STAGE_DIR"
+
+# 2) Copy built files into staging root
+rsync -a "$DIST_DIR/" "$STAGE_DIR/"
+
+# 3) Ensure framer.json and icons live at the root of the archive
+cp "$ROOT_DIR/framer.json" "$STAGE_DIR/"
+if [[ -f "$ROOT_DIR/public/icon.png" ]]; then
+  cp "$ROOT_DIR/public/icon.png" "$STAGE_DIR/"
+fi
+if [[ -f "$ROOT_DIR/public/icon-dark.png" ]]; then
+  cp "$ROOT_DIR/public/icon-dark.png" "$STAGE_DIR/"
+fi
+
+# 4) Create zip from staging root
+rm -f "$ZIP_PATH"
+(cd "$STAGE_DIR" && zip -qr "$ZIP_PATH" .)
+
+echo "[pack] Wrote $ZIP_PATH"
+echo "[pack] Upload plugin.zip in Framer → Creator Dashboard → Your Plugin → New Version"
+
