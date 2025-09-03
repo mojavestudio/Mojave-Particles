@@ -6,5 +6,5 @@
   "modes": [
     "canvas"
   ],
-  "icon": "/icon.png?cacheBust=1"
+  "icon": "icon.png?cacheBust=1"
 }
