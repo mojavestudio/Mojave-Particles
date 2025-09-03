@@ -1032,7 +1032,7 @@ export function App() {
         for (const candidate of candidates) {
             try {
                 dlog(`[Insert] Trying specifier via importName (remote-only): ${candidate}`)
-                const node = await framer.addComponentInstance({ url, name: candidate, attributes } as any)
+                const node = await framer.addComponentInstance({ url, importName: candidate, attributes } as any)
                 dlog(`[Insert] Success with importName specifier: ${candidate}`)
                 return node as CanvasNode
             } catch (errImport) {
@@ -1177,7 +1177,7 @@ export function App() {
         } catch {}
 
         // Use the EXACT pinned shared module URL for MojaveParticles (with @saveId).
-        const COMPONENT_URL = "https://framer.com/m/MojaveParticles-7CfN.js@ll1Ex6R4Vj8rhaGyhOFv"
+        const COMPONENT_URL = "https://framer.com/m/MojaveParticles-7CfN.js@9z9xEdN2cLrO2YFGlZTN"
         // NOTE: Always import from remote URL; this plugin never references local code files.
 
         // Introspect the shared module to discover export names and potential local imports
