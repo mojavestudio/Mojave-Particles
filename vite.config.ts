@@ -8,11 +8,23 @@ import { fileURLToPath } from "node:url"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+// Plugin to copy framer.json to dist
+function copyFramerJson() {
+    return {
+        name: 'copy-framer-json',
+        writeBundle() {
+            const src = path.resolve(__dirname, 'framer.json')
+            const dest = path.resolve(__dirname, 'dist/framer.json')
+            fs.copyFileSync(src, dest)
+        }
+    }
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
     // Use relative base so built assets resolve correctly inside the plugin zip
     base: './',
-    plugins: [mkcert(), react()],
+    plugins: [mkcert(), react(), copyFramerJson()],
     server: {
         host: "localhost",
         port: 5173,

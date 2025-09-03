@@ -55,11 +55,25 @@ if [[ -f "$ROOT_DIR/public/icon-dark.png" ]]; then
   cp "$ROOT_DIR/public/icon-dark.png" "$STAGE_DIR/"
 fi
 
-# 4) Create zip from staging root
-rm -f "$ZIP_PATH"
-(cd "$STAGE_DIR" && zip -qr "$ZIP_PATH" .)
+# Safety: ensure reference-only files are never included
+rm -f "$STAGE_DIR/particles.tsx" "$STAGE_DIR/particles.jsx" "$STAGE_DIR/particles.js" "$STAGE_DIR/particles.mjs" || true
 
-echo "[pack] Wrote $ZIP_PATH"
+# 4) Create zip from staging root (versioned + latest symlink)
+# Detect version from framer.json
+FRAMER_VERSION=$(grep -oE '"version"\s*:\s*"[^"]+"' "$ROOT_DIR/framer.json" 2>/dev/null | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+if [[ -n "$FRAMER_VERSION" ]]; then
+  ZIP_VERSIONED="$ROOT_DIR/plugin-$FRAMER_VERSION.zip"
+else
+  ZIP_VERSIONED="$ZIP_PATH"
+fi
+
+rm -f "$ZIP_VERSIONED" "$ZIP_PATH"
+(cd "$STAGE_DIR" && zip -qr "$ZIP_VERSIONED" .)
+# Keep a stable name for upload, but also save versioned archive to avoid confusion
+cp "$ZIP_VERSIONED" "$ZIP_PATH"
+
+echo "[pack] Wrote $ZIP_VERSIONED"
+echo "[pack] Updated latest -> $ZIP_PATH"
 echo "[pack] Upload plugin.zip in Framer → Creator Dashboard → Your Plugin → New Version"
 
 # 5) Cleanup staging to avoid duplicates alongside dist/
