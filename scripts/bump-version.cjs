@@ -31,6 +31,7 @@ function bump(ver, kind) {
 
 const framerPath = path.join(root, 'framer.json')
 const pkgPath = path.join(root, 'package.json')
+const htmlPath = path.join(root, 'index.html')
 
 const framer = readJSON(framerPath)
 const pkg = readJSON(pkgPath)
@@ -44,5 +45,13 @@ pkg.version = next
 writeJSON(framerPath, framer)
 writeJSON(pkgPath, pkg)
 
-console.log(`[bump] ${current} -> ${next}`)
+// Also update index.html cache-bust and build marker if present
+try {
+  let html = fs.readFileSync(htmlPath, 'utf8')
+  html = html
+    .replace(/(Build version:\s*)([0-9]+\.[0-9]+\.[0-9]+)/, `$1${next}`)
+    .replace(/cacheBust=([0-9]+\.[0-9]+\.[0-9]+)/g, `cacheBust=${next}`)
+  fs.writeFileSync(htmlPath, html, 'utf8')
+} catch {}
 
+console.log(`[bump] ${current} -> ${next}`)

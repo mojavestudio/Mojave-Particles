@@ -2,19 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-      <!-- Build version: 1.0.3 -->
-      <link rel="icon" href="./icon.png?cacheBust=1.0.3" />
-      <link rel="shortcut icon" href="./icon.png?cacheBust=1.0.3" />
-      <link rel="apple-touch-icon" href="./icon.png?cacheBust=1.0.3" />
-      <link rel="icon" type="image/png" href="./icon.png?cacheBust=1.0.3" media="(prefers-color-scheme: light)" />
-      <link rel="icon" type="image/png" href="./icon-dark.png?cacheBust=1.0.3" media="(prefers-color-scheme: dark)" />
+      <!-- Build version: 1.0.5 -->
+      <!-- Icons (both variants shipped; Framer sets data-framer-theme for UI colors) -->
+      <link rel="icon" href="./icon.png?cacheBust=1.0.5" />
+      <link rel="shortcut icon" href="./icon.png?cacheBust=1.0.5" />
+      <link rel="apple-touch-icon" href="./icon.png?cacheBust=1.0.5" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <title>Mojave Particles Dev</title>
-    </head>
-    <body style="background:#121212;color:#fff;">
       <style>
+        /* Follow Framer's theme via CSS variables provided by framer-plugin */
         html, body, #root { height: 100%; margin: 0; }
-</style>
+        body { background: var(--framer-color-bg); color: var(--framer-color-text); }
+      </style>
+    </head>
+    <body>
       <div id="root"><noscript>Enable JavaScript to see the plugin UI</noscript></div>
       <script type="module" src="/src/main.tsx"></script>
       </body>
