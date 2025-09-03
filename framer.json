@@ -1,7 +1,7 @@
 {
   "id": "51e920",
   "name": "Mojave Particles Pro",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "index.html",
   "modes": [
     "canvas"
