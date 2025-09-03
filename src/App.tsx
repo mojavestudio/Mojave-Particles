@@ -930,53 +930,72 @@ export function App() {
                 return
             }
 
-            // Preflight verification without binding to surface wrong_plugin and avoid accidental binds
+            // 1) Preflight to surface wrong_plugin without binding
             const precheck = await verifyAccessJSONP(emailValue, accessCodeValue, { bind: false })
-            if (precheck && (precheck as any).reason === "wrong_plugin") {
-                setVerificationError("This license is for a different plugin.")
+            if (__isLocal) console.log('Verify payload (precheck):', JSON.stringify(precheck, null, 2))
+
+            if (precheck && precheck.reason === "wrong_plugin") {
+                setVerificationError("License found but plugin mismatch. Sheet says: not \"Particles\".")
                 try { await writeUserScopedPluginData("session", "") } catch {}
                 clearSessionLocal()
                 setIsVerifying(false)
                 return
             }
 
-            // Only allow re-login when the license is already bound to this Framer user
-            const result = precheck
-            if (result && result.ok === true && result.valid === true && result.action === "already_bound") {
-                setIsAuthenticated(true)
-                setProjectName(result.project_name || "")
-                setShowLogin(false)
-                await persistSession(emailValue, result.project_name || "")
-                setEmail(emailValue)
-                framer.notify(`Welcome to Mojave Particles!`.trim(), { variant: "success" })
-                localStorage.removeItem(SESSION_FORCE_FRESH_KEY)
-            } else if (result && (result as any).reason) {
-                switch ((result as any).reason) {
-                    case "wrong_plugin":
-                        setVerificationError("This license is for a different plugin.")
-                        break
-                    case "bound_requires_user_id":
-                        setVerificationError("This license is already bound. Please try again while signed into the same Framer account.")
-                        break
-                    case "bound_to_other":
-                        setVerificationError("This license is already bound to another Framer account.")
-                        break
-                    case "not_found":
-                        setVerificationError("We couldn't find a purchase matching that email and access code.")
-                        break
-                    default:
-                        setVerificationError("Verification failed. Please double-check your email and access code.")
-                }
-            } else if (result && result.error) {
-                setVerificationError(result.error)
-                // Make absolutely sure no session lingers on failure
+            // 2) Main verify with bind attempt (server auto-binds if needed)
+            const resp = await verifyAccessJSONP(emailValue, accessCodeValue, { bind: true })
+            if (__isLocal) console.log('Verify payload (bind):', JSON.stringify(resp, null, 2))
+
+            // State machine handling per latest server contract
+            if (!resp || resp.ok === false) {
+                setVerificationError(`Server error: ${resp?.error ?? 'unknown'}`)
                 try { await writeUserScopedPluginData("session", "") } catch {}
                 clearSessionLocal()
-            } else {
-                setVerificationError("License is not activated for this account. Ensure 'Plugin Name' is 'Particles' and try again.")
-                try { await writeUserScopedPluginData("session", "") } catch {}
-                clearSessionLocal()
+                return
             }
+
+            // Hard errors we should surface directly
+            if (resp.reason === 'wrong_plugin') {
+                setVerificationError('License found but plugin mismatch. Sheet says: not "Particles".')
+                return
+            }
+            if (resp.reason === 'not_found') {
+                setVerificationError('No license found for this email + code.')
+                return
+            }
+            if (resp.reason === 'bound_to_other') {
+                setVerificationError('This license is bound to a different Framer account.')
+                return
+            }
+            if (resp.reason === 'bound_requires_user_id') {
+                setVerificationError('Already bound; please sign into Framer so we can pass your user id and continue.')
+                return
+            }
+
+            // Happy paths
+            if (resp.valid && resp.bound) {
+                setIsAuthenticated(true)
+                setProjectName(resp.project_name || "")
+                setShowLogin(false)
+                await persistSession(emailValue, resp.project_name || "")
+                setEmail(emailValue)
+                framer.notify(`✅ ${resp.project_name || 'License'} is active (${resp.action || 'bound'}).`, { variant: "success" })
+                localStorage.removeItem(SESSION_FORCE_FRESH_KEY)
+                return
+            }
+
+            if (resp.valid && !resp.bound) {
+                // Likely missing framer_user_id; ask user to sign in the Framer desktop app
+                setVerificationError('We verified your license, but need your Framer user id to bind it. Please sign into Framer and try again.')
+                try { await writeUserScopedPluginData("session", "") } catch {}
+                clearSessionLocal()
+                return
+            }
+
+            // Fallback
+            setVerificationError('Unexpected response. Check logs.')
+            try { await writeUserScopedPluginData("session", "") } catch {}
+            clearSessionLocal()
         } catch (error) {
             console.error("Authentication error:", error)
             setVerificationError("Verification failed. Please check your internet connection and try again.")
@@ -1158,7 +1177,7 @@ export function App() {
         } catch {}
 
         // Use the EXACT pinned shared module URL for MojaveParticles (with @saveId).
-        const COMPONENT_URL = "https://framer.com/m/MojaveParticles-a0lj.js@XK4GkthxDUi5hqZxv82u"
+        const COMPONENT_URL = "https://framer.com/m/MojaveParticles-7CfN.js@ll1Ex6R4Vj8rhaGyhOFv"
         // NOTE: Always import from remote URL; this plugin never references local code files.
 
         // Introspect the shared module to discover export names and potential local imports
