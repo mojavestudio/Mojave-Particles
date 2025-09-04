@@ -8,6 +8,16 @@ import { fileURLToPath } from "node:url"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+// Read plugin version from framer.json to embed in the bundle.
+let __PLUGIN_VERSION = '0.0.0'
+try {
+    const framerJsonPath = path.resolve(__dirname, 'framer.json')
+    const framerJson = JSON.parse(fs.readFileSync(framerJsonPath, 'utf8'))
+    __PLUGIN_VERSION = String(framerJson?.version ?? __PLUGIN_VERSION)
+} catch {
+    // ignore – fallback stays '0.0.0'
+}
+
 // Plugin to copy framer.json to dist
 function copyFramerJson() {
     return {
@@ -24,6 +34,10 @@ function copyFramerJson() {
 export default defineConfig({
     // Use relative base so built assets resolve correctly inside the plugin zip
     base: './',
+    // Embed a build-time constant so the JS bundle changes across versions.
+    define: {
+        __FRAMER_PLUGIN_VERSION__: JSON.stringify(__PLUGIN_VERSION),
+    },
     plugins: [mkcert(), react(), copyFramerJson()],
     server: {
         host: "localhost",
