@@ -1,6 +1,5 @@
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
-import mkcert from "vite-plugin-mkcert"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -31,14 +30,17 @@ function copyFramerJson() {
 }
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(async ({ command }) => {
+    const mkcert = command === 'serve' ? (await import('vite-plugin-mkcert')).default : null
+    return ({
     // Use relative base so built assets resolve correctly inside the plugin zip
     base: './',
     // Embed a build-time constant so the JS bundle changes across versions.
     define: {
         __FRAMER_PLUGIN_VERSION__: JSON.stringify(__PLUGIN_VERSION),
     },
-    plugins: [mkcert(), react(), copyFramerJson()],
+    // Only apply mkcert in dev server; omit during build to avoid unnecessary deps
+    plugins: [command === 'serve' ? mkcert?.() : undefined, react(), copyFramerJson()].filter(Boolean) as any,
     server: {
         host: "localhost",
         port: 5173,
@@ -81,4 +83,5 @@ export default defineConfig({
             target: ["chrome89", "firefox89", "safari15", "edge89"],
         },
     },
+})
 })

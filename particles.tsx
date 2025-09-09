@@ -1,6 +1,6 @@
 /**
- * @framerSupportedLayoutWidth fixed
- * @framerSupportedLayoutHeight fixed
+ * @framerSupportedLayoutWidth any
+ * @framerSupportedLayoutHeight any
  * @framerIntrinsicWidth 800
  * @framerIntrinsicHeight 600
  */
@@ -21,16 +21,17 @@ export default function MojaveParticles({
     move = { enable: true, speed: 2, direction: "none", random: false },
     color = "#ffffff",
     colors = [],
-    backdrop = "#141414",
+    backdrop,
     radius = 0,
     shape = { type: "circle" },
     hover = { enable: true, mode: "grab", force: 60 },
     modes = {},
     twinkle = { enable: false, speed: 1, minOpacity: 0.1, maxOpacity: 1 },
     glow = { enable: false, size: 3, intensity: 0.6 },
-    backgroundOpacity = 1,
     previewMotion = true,
     style = {},
+    width,
+    height,
 }: any) {
     const [isMounted, setIsMounted] = useState(false)
     const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -51,6 +52,16 @@ export default function MojaveParticles({
     // @ts-ignore
     const __allProps = (arguments as any)[0] || {}
     const styleProp = (style || (__allProps as any).style) || {}
+    const styleWidth = (styleProp as any).width
+    const styleHeight = (styleProp as any).height
+    const styleBorderRadius = (styleProp as any).borderRadius
+    // Only sanitize background-related styles if a backdrop color is set; otherwise allow native layer Fill
+    const shouldSanitizeBackground = backdrop != null && backdrop !== ""
+    const safeStyle = shouldSanitizeBackground
+        ? (Object.fromEntries(
+            Object.entries(styleProp as any).filter(([k]) => !String(k).toLowerCase().startsWith("background"))
+          ) as any)
+        : (styleProp as any)
     const intrinsicW = 800
     const intrinsicH = 600
     const normalizedShape = {
@@ -101,8 +112,9 @@ export default function MojaveParticles({
         target === RenderTarget.export || target === RenderTarget.thumbnail
 
     // Final switch for animation in the active target
+    const isVisibleProp = (__allProps as any)?.visible
     const allowAnimation =
-        move?.enable !== false && !inExport && !(inPreview && !previewMotion)
+        move?.enable !== false && !inExport && !(inPreview && !previewMotion) && (isVisibleProp !== false)
 
     useEffect(() => {
         setIsMounted(true)
@@ -148,6 +160,56 @@ export default function MojaveParticles({
             }
         }
 
+        // Try to extract the alpha channel from a Framer Color or CSS color string
+        function getAlpha(colorInput: any): number {
+            try {
+                if (!colorInput) return 1
+                // Framer Color object
+                if (typeof colorInput === "object") {
+                    try {
+                        // Prefer Color.alpha if available
+                        const a = (Color as any)?.alpha?.(Color(colorInput))
+                        if (typeof a === "number" && !isNaN(a)) return a
+                    } catch {}
+                    // Fallback to parsing an rgb/rgba string if supported
+                    try {
+                        const rgb = (Color as any)?.toRgbString?.(Color(colorInput))
+                        if (typeof rgb === "string") {
+                            const m = rgb.match(/rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(?:,\s*(\d*\.?\d+)\s*)?\)/i)
+                            if (m && m[1] != null) return Math.max(0, Math.min(1, parseFloat(m[1])))
+                        }
+                    } catch {}
+                    return 1
+                }
+                // CSS color string with rgba()/hsla()
+                if (typeof colorInput === "string") {
+                    // 8-digit HEX (#RRGGBBAA)
+                    const hex8 = colorInput.match(/^#([0-9a-fA-F]{8})$/)
+                    if (hex8) {
+                        const aa = parseInt(hex8[1].slice(6, 8), 16)
+                        return Math.max(0, Math.min(1, aa / 255))
+                    }
+                    // 4-digit HEX (#RGBA)
+                    const hex4 = colorInput.match(/^#([0-9a-fA-F]{4})$/)
+                    if (hex4) {
+                        const a = parseInt(hex4[1].slice(3, 4).repeat(2), 16)
+                        return Math.max(0, Math.min(1, a / 255))
+                    }
+                    const rgba = colorInput.match(/rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*(\d*\.?\d+)\s*\)/i)
+                    if (rgba && rgba[1] != null) return Math.max(0, Math.min(1, parseFloat(rgba[1])))
+                    const hsla = colorInput.match(/hsla?\(\s*[-\d.]+\s*,\s*[-\d.]+%\s*,\s*[-\d.]+%\s*,\s*(\d*\.?\d+)\s*\)/i)
+                    if (hsla && hsla[1] != null) return Math.max(0, Math.min(1, parseFloat(hsla[1])))
+                    // Try the Color API on strings too (supports 8-digit hex and others)
+                    try {
+                        const a = (Color as any)?.alpha?.(Color(colorInput))
+                        if (typeof a === "number" && !isNaN(a)) return a
+                    } catch {}
+                    return 1
+                }
+            } catch {}
+            return 1
+        }
+
         function hexToRgba(hex: string, alpha = 1) {
             const res = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
             if (!res) return `rgba(255,255,255,${alpha})`
@@ -155,6 +217,72 @@ export default function MojaveParticles({
                 g = parseInt(res[2], 16),
                 b = parseInt(res[3], 16)
             return `rgba(${r}, ${g}, ${b}, ${alpha})`
+        }
+
+        // Convert diverse CSS/Framer color inputs into a concrete CSS rgb/rgba string
+        function resolveCssColor(input: any): string | null {
+            try {
+                if (!input) return null
+                // Framer Color object or any object supported by Color()
+                if (typeof input === 'object') {
+                    try {
+                        const s = (Color as any)?.toRgbString?.(Color(input))
+                        if (typeof s === 'string') return s
+                    } catch {}
+                }
+                if (typeof input === 'string') {
+                    const s = input.trim()
+                    // Already rgb/rgba
+                    if (/^rgba?\(/i.test(s)) return s
+                    // 8-digit hex (#RRGGBBAA)
+                    if (/^#([0-9a-fA-F]{8})$/.test(s)) {
+                        const m = s.match(/^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/)!
+                        const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16), a = parseInt(m[4], 16) / 255
+                        return `rgba(${r}, ${g}, ${b}, ${a})`
+                    }
+                    // 4-digit hex (#RGBA)
+                    if (/^#([0-9a-fA-F]{4})$/.test(s)) {
+                        const m = s.match(/^#([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])$/)!
+                        const r = parseInt(m[1] + m[1], 16), g = parseInt(m[2] + m[2], 16), b = parseInt(m[3] + m[3], 16), a = parseInt(m[4] + m[4], 16) / 255
+                        return `rgba(${r}, ${g}, ${b}, ${a})`
+                    }
+                    // 6-digit hex -> opaque rgb
+                    if (/^#([0-9a-fA-F]{6})$/.test(s)) {
+                        const m = s.match(/^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/)!
+                        const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16)
+                        return `rgb(${r}, ${g}, ${b})`
+                    }
+                    // CSS var token — resolve via computed style
+                    if (/^var\(/i.test(s)) {
+                        const probe = document.createElement('span')
+                        probe.style.position = 'absolute'
+                        probe.style.visibility = 'hidden'
+                        probe.style.pointerEvents = 'none'
+                        probe.style.color = s
+                        document.body.appendChild(probe)
+                        const resolved = getComputedStyle(probe).color
+                        probe.remove()
+                        if (resolved && /^rgba?\(/i.test(resolved)) return resolved
+                        // Fallback to extracting the var() fallback rgb in the string if present
+                        const m = s.match(/rgb\([^\)]+\)/i)
+                        if (m) return m[0]
+                    }
+                    // Last resort: try Color API on strings
+                    try {
+                        const via = (Color as any)?.toRgbString?.(Color(s))
+                        if (typeof via === 'string') return via
+                    } catch {}
+                }
+            } catch {}
+            return null
+        }
+
+        function alphaFromCssColorString(s: string): number {
+            if (!s) return 1
+            const rgba = s.match(/rgba\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/i)
+            if (rgba) return Math.max(0, Math.min(1, parseFloat(rgba[4])))
+            if (/^rgb\(/i.test(s)) return 1
+            return 1
         }
 
         function drawStar(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
@@ -196,7 +324,22 @@ export default function MojaveParticles({
                 ctx.fillText((normalizedShape.text as any) || "⭐", x, y)
                 return
             }
-            ctx.fillStyle = hexToRgba(color, opacity)
+            // Resolve base color (supports tokens/rgba/hex) and combine with per-particle opacity
+            const baseCss = resolveCssColor(color) || makeHex(color)
+            let baseA = alphaFromCssColorString(baseCss)
+            if (!isFinite(baseA)) baseA = 1
+            const finalA = Math.max(0, Math.min(1, baseA * opacity))
+            if (/^rgba\(/i.test(baseCss)) {
+                // replace alpha in existing rgba
+                const parts = baseCss.match(/rgba\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/i)!
+                ctx.fillStyle = `rgba(${parts[1]}, ${parts[2]}, ${parts[3]}, ${finalA})`
+            } else if (/^rgb\(/i.test(baseCss)) {
+                const parts = baseCss.match(/rgb\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/i)!
+                ctx.fillStyle = `rgba(${parts[1]}, ${parts[2]}, ${parts[3]}, ${finalA})`
+            } else {
+                // hex or other → convert via helper
+                ctx.fillStyle = hexToRgba(makeHex(baseCss), finalA)
+            }
             if (normalizedShape.type === "square") {
                 const s = size * 2
                 ctx.fillRect(x - size, y - size, s, s)
@@ -211,7 +354,11 @@ export default function MojaveParticles({
             }
         }
 
-        const cols = (colors && colors.length ? colors : [color]).map(makeHex)
+        const cols = (colors && colors.length ? colors : [color]).map(c => {
+            const css = resolveCssColor(c)
+            if (css) return css
+            return makeHex(c)
+        })
 
         // Grapheme-safe emoji segmentation (handles ZWJ sequences, flags, skin tones)
         function toEmojiArray(input?: string) {
@@ -234,8 +381,10 @@ export default function MojaveParticles({
             const container = rootRef.current || canvas.parentElement
             if (!container) return
             const rect = typeof (container as any).getBoundingClientRect === "function" ? (container as any).getBoundingClientRect() : { width: (container as HTMLElement).clientWidth, height: (container as HTMLElement).clientHeight } as any
-            const cw = Math.max(1, rect.width || (container as HTMLElement).clientWidth || 800)
-            const ch = Math.max(1, rect.height || (container as HTMLElement).clientHeight || 600)
+            const propW = (width ?? (__allProps as any)?.width) as number | undefined
+            const propH = (height ?? (__allProps as any)?.height) as number | undefined
+            const cw = Math.max(1, (typeof propW === 'number' ? propW : (rect.width || (container as HTMLElement).clientWidth)) || 800)
+            const ch = Math.max(1, (typeof propH === 'number' ? propH : (rect.height || (container as HTMLElement).clientHeight)) || 600)
             const dpr = Math.max(1, window.devicePixelRatio || 1)
             lastDprRef.current = dpr
             const prevW = (canvas as any).logicalWidth || cw
@@ -403,13 +552,16 @@ export default function MojaveParticles({
         }
 
         const drawBackdrop = (width: number, height: number) => {
-            if (backdrop && backgroundOpacity > 0) {
-                ctx.save()
-                ctx.globalAlpha = backgroundOpacity
-                ctx.fillStyle = makeHex(backdrop)
-                ctx.fillRect(0, 0, width, height)
-                ctx.restore()
-            }
+            if (!backdrop) return
+            const css = resolveCssColor(backdrop)
+            if (!css) return
+            const a = alphaFromCssColorString(css)
+            if (a <= 0) return
+            ctx.save()
+            ctx.globalAlpha = 1
+            ctx.fillStyle = css
+            ctx.fillRect(0, 0, width, height)
+            ctx.restore()
         }
 
         // Connection rendering between particles
@@ -423,9 +575,9 @@ export default function MojaveParticles({
             const lineWidth = (normalizedModes.connectWidth && normalizedModes.connectWidth > 0)
                 ? Math.max(0.25, normalizedModes.connectWidth * Math.max(0.75, Math.min(1.5, s)))
                 : 1
-            // Optional explicit connection color
+            // Optional explicit connection color (resolve tokens & alpha)
             const connectColorRaw = (modes as any)?.connectColor
-            const connectColorHex = connectColorRaw ? makeHex(connectColorRaw) : undefined
+            const connectColorCss = connectColorRaw ? (resolveCssColor(connectColorRaw) || makeHex(connectColorRaw)) : undefined
 
             ctx.save()
             ctx.lineWidth = lineWidth
@@ -439,7 +591,21 @@ export default function MojaveParticles({
                     if (d > maxDist) continue
                     const alpha = baseOpacity * (1 - d / maxDist)
                     if (alpha <= 0) continue
-                    ctx.strokeStyle = hexToRgba(connectColorHex || "#ffffff", alpha)
+                    if (connectColorCss) {
+                        const ca = alphaFromCssColorString(connectColorCss)
+                        const useA = Math.max(0, Math.min(1, ca * alpha))
+                        if (/^rgba\(/i.test(connectColorCss)) {
+                            const parts = connectColorCss.match(/rgba\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/i)!
+                            ctx.strokeStyle = `rgba(${parts[1]}, ${parts[2]}, ${parts[3]}, ${useA})`
+                        } else if (/^rgb\(/i.test(connectColorCss)) {
+                            const parts = connectColorCss.match(/rgb\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/i)!
+                            ctx.strokeStyle = `rgba(${parts[1]}, ${parts[2]}, ${parts[3]}, ${useA})`
+                        } else {
+                            ctx.strokeStyle = hexToRgba(makeHex(connectColorCss), useA)
+                        }
+                    } else {
+                        ctx.strokeStyle = hexToRgba('#ffffff', alpha)
+                    }
                     ctx.beginPath()
                     ctx.moveTo(p1.x, p1.y)
                     ctx.lineTo(p2.x, p2.y)
@@ -616,16 +782,20 @@ export default function MojaveParticles({
         }
 
         // Mouse handlers
-        const handleMouseMove = (e: MouseEvent) => {
+        // Use global pointer tracking so the canvas never intercepts events
+        const handlePointerMove = (e: PointerEvent) => {
             const rect = canvas.getBoundingClientRect()
-            mouseRef.current = {
-                x: e.clientX - rect.left,
-                y: e.clientY - rect.top,
-                isHovering: true,
+            const x = e.clientX - rect.left
+            const y = e.clientY - rect.top
+            const within = x >= 0 && y >= 0 && x <= rect.width && y <= rect.height
+            if (within) {
+                mouseRef.current = { x, y, isHovering: true }
+            } else {
+                mouseRef.current = { x: -1, y: -1, isHovering: false }
             }
         }
 
-        const handleMouseLeave = () => {
+        const handleWindowBlur = () => {
             mouseRef.current.isHovering = false
         }
 
@@ -673,28 +843,52 @@ export default function MojaveParticles({
             ro.observe(containerEl)
         }
 
-        // Watch devicePixelRatio changes for crisp rendering on zoom
-        const dprPoll = window.setInterval(() => {
+        // Watch devicePixelRatio changes without polling: listen to common resolution breakpoints
+        const mqs: MediaQueryList[] = [
+            window.matchMedia('(min-resolution: 1.25dppx)'),
+            window.matchMedia('(min-resolution: 1.5dppx)'),
+            window.matchMedia('(min-resolution: 2dppx)'),
+            window.matchMedia('(min-resolution: 3dppx)')
+        ]
+        const onDpr = () => {
             const current = Math.max(1, window.devicePixelRatio || 1)
             if (current !== lastDprRef.current) {
                 lastDprRef.current = current
                 resizeCanvas()
                 if (!allowAnimation) drawStaticParticles()
             }
-        }, 350)
+        }
+        mqs.forEach(mq => mq.addEventListener?.('change', onDpr))
+
+        // Pause when offscreen
+        let io: IntersectionObserver | null = null
+        io = new IntersectionObserver((entries) => {
+            const entry = entries[0]
+            if (!entry) return
+            const onScreen = entry.isIntersecting && entry.intersectionRatio > 0
+            if (onScreen) {
+                if (allowAnimation && !animationRef.current) animationRef.current = requestAnimationFrame(animate)
+            } else {
+                if (animationRef.current) { cancelAnimationFrame(animationRef.current); animationRef.current = null }
+            }
+        }, { root: null, threshold: [0, 0.01, 0.1] })
+        io.observe(canvas)
         if (hover?.enable) {
-            canvas.addEventListener("mousemove", handleMouseMove)
-            canvas.addEventListener("mouseleave", handleMouseLeave)
+            window.addEventListener("pointermove", handlePointerMove, { passive: true })
+            window.addEventListener("pointerdown", handlePointerMove, { passive: true })
+            window.addEventListener("blur", handleWindowBlur)
         }
 
         return () => {
             if (animationRef.current) cancelAnimationFrame(animationRef.current)
             window.removeEventListener("resize", onWindowResize)
             if (ro) ro.disconnect()
-            window.clearInterval(dprPoll)
+            if (io) io.disconnect()
+            mqs.forEach(mq => mq.removeEventListener?.('change', onDpr))
             if (hover?.enable) {
-                canvas.removeEventListener("mousemove", handleMouseMove)
-                canvas.removeEventListener("mouseleave", handleMouseLeave)
+                window.removeEventListener("pointermove", handlePointerMove)
+                window.removeEventListener("pointerdown", handlePointerMove)
+                window.removeEventListener("blur", handleWindowBlur)
             }
             lastTimeRef.current = null
         }
@@ -704,7 +898,6 @@ export default function MojaveParticles({
         backdrop,
         color,
         colors,
-        backgroundOpacity,
         move?.speed,
         move?.enable,
         move?.direction,
@@ -736,16 +929,17 @@ export default function MojaveParticles({
         <div
             ref={rootRef}
             style={{
-                // Default to intrinsic size; Framer overrides via style when fixed sizing is used
-                width: (styleProp as any).width ?? intrinsicW,
-                height: (styleProp as any).height ?? intrinsicH,
+                // Default to intrinsic size; allow external fixed sizing to take effect via styleWidth/Height
+                width: (styleWidth as any) ?? intrinsicW,
+                height: (styleHeight as any) ?? intrinsicH,
 
-                background: backgroundOpacity === 0 ? "transparent" : backdrop,
-                borderRadius: radius,
+                // Keep DOM background transparent only if we draw our own backdrop; otherwise allow native Fill
+                background: shouldSanitizeBackground ? "transparent" : (safeStyle as any)?.background,
+                borderRadius: styleBorderRadius ?? radius,
                 display: "block",
                 position: "relative",
                 overflow: "hidden",
-                minHeight: "200px",
+                minHeight: inCanvas ? "200px" : undefined,
                 border: "0",
                 outline: "0",
                 margin: 0,
@@ -755,9 +949,10 @@ export default function MojaveParticles({
                 transform: "translateZ(0)",
                 WebkitTransform: "translateZ(0)",
                 willChange: "transform",
-                // IMPORTANT: spread last so Framer can override width/height in fixed sizing
-                ...(styleProp as any),
+                // Spread external styles (conditionally sanitized)
+                ...(safeStyle as any),
             }}
+            aria-hidden={true}
         >
             <canvas
                 ref={canvasRef}
@@ -765,7 +960,7 @@ export default function MojaveParticles({
                     width: "100%",
                     height: "100%",
                     display: "block",
-                    pointerEvents: hover?.enable ? "auto" : "none",
+                    pointerEvents: "none",
                     backgroundColor: "transparent",
                     border: "0",
                     outline: "0",
@@ -784,16 +979,8 @@ export default function MojaveParticles({
 
 // Property Controls
 addPropertyControls(MojaveParticles, {
-    backdrop: { type: ControlType.Color, title: "Background" },
-    backgroundOpacity: {
-        type: ControlType.Number,
-        title: "Background Opacity",
-        defaultValue: 1,
-        min: 0,
-        max: 1,
-        step: 0.1,
-    },
-    color: { type: ControlType.Color, title: "Color" },
+    backdrop: { type: ControlType.Color, title: "Background", alpha: true, optional: true },
+    color: { type: ControlType.Color, title: "Color", alpha: true },
     colors: {
         type: ControlType.Array,
         title: "Colors",
@@ -1012,7 +1199,7 @@ addPropertyControls(MojaveParticles, {
             connectDistance: { type: ControlType.Number, title: "Distance", defaultValue: 120, min: 0, max: 600, step: 1 },
             connectOpacity: { type: ControlType.Number, title: "Opacity", defaultValue: 0.2, min: 0, max: 1, step: 0.05 },
             connectWidth: { type: ControlType.Number, title: "Width", defaultValue: 1, min: 0.25, max: 6, step: 0.25 },
-            connectColor: { type: ControlType.Color, title: "Color" },
+            connectColor: { type: ControlType.Color, title: "Color", alpha: true },
         },
     },
 

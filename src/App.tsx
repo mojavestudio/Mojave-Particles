@@ -11,6 +11,27 @@ function dlog(...args: any[]) {
   if (__isLocal) console.log(...args)
 }
 
+// Emoji sprite helper available across preview routines
+function makeEmojiSprite(glyph: string, drawSize: number) {
+  const dpr = Math.max(1, (typeof window !== 'undefined' && (window as any).devicePixelRatio) || 1)
+  const fontSize = Math.max(4, Math.floor(drawSize * 2))
+  const pad = Math.ceil(fontSize * 0.4)
+  const cw = fontSize + pad * 2
+  const ch = fontSize + pad * 2
+  const off = typeof document !== 'undefined' ? document.createElement('canvas') : null
+  if (!off) return null
+  off.width = Math.ceil(cw * dpr)
+  off.height = Math.ceil(ch * dpr)
+  const octx = off.getContext('2d')!
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  octx.clearRect(0, 0, cw, ch)
+  octx.textAlign = 'center'
+  octx.textBaseline = 'middle'
+  octx.font = `${fontSize}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, Arial`
+  octx.fillText(glyph, cw / 2, ch / 2)
+  return off
+}
+
 // Force boundary/out mode across all known aliases on a node's controls.
 async function forceBoundaryAcrossAliases(framer: any, nodeId: string, mode: string) {
   try {
@@ -234,11 +255,11 @@ export function App() {
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false)
 
     const [showLogin, setShowLogin] = useState<boolean>(false)
-    const [email, setEmail] = useState<string>("")
-    const [accessCode, setAccessCode] = useState<string>("")
+    const [_email, setEmail] = useState<string>("")
+    const [_accessCode, setAccessCode] = useState<string>("")
     const [isVerifying, setIsVerifying] = useState<boolean>(false)
     const [verificationError, setVerificationError] = useState<string>("")
-    const [projectName, setProjectName] = useState<string>("")
+    const [_projectName, setProjectName] = useState<string>("")
     
     const SESSION_LOCAL_KEY = "mojave:session"
     const SESSION_FORCE_FRESH_KEY = "mojave:requireFreshAuth"
@@ -299,6 +320,8 @@ export function App() {
         setShowLogin(true)
         framer.notify("Session reset. Please sign in again.", { variant: "info" })
     }
+    // Expose for local debug so it's considered used
+    try { if (__isLocal) (window as any).__resetMojaveAuth = resetAuthMemory } catch {}
 
     async function checkSessionOnStart() {
         // 1) try local fast path
@@ -409,7 +432,7 @@ export function App() {
     
     // Shape settings
     const [shapeType, setShapeType] = useState("circle")
-    const [shapeText, setShapeText] = useState("●")
+    const [shapeText, setShapeText] = useState<string | string[]>("●")
     const emojiPresets = ["●","★","✦","✧","✪","✩","✺","✹","✵","✷","✶","✳","✴","✻","☀","☾","☽","🌙","⭐","✨","💫","🌟"]
     
     // Movement settings
@@ -458,25 +481,25 @@ export function App() {
     const [canvasHeight, setCanvasHeight] = useState(600)
     
     // Additional state variables for presets
-    const [fillEnable, setFillEnable] = useState(false)
-    const [fillColor, setFillColor] = useState("#ff6b35")
-    const [fillOpacity, setFillOpacity] = useState(0.5)
-    const [borderOpacity, setBorderOpacity] = useState(1)
+    const [_fillEnable, setFillEnable] = useState(false)
+    const [_fillColor, setFillColor] = useState("#ff6b35")
+    const [_fillOpacity, setFillOpacity] = useState(0.5)
+    const [_borderOpacity, setBorderOpacity] = useState(1)
     const [connectEnable, setConnectEnable] = useState(false)
     const [connectDistance, setConnectDistance] = useState(100)
     const [connectOpacity, setConnectOpacity] = useState(1)
     const [hoverSmooth, setHoverSmooth] = useState(10)
-    const [vibrateEnable, setVibrateEnable] = useState(false)
-    const [vibrateFrequency, setVibrateFrequency] = useState(50)
-    const [moveTrail, setMoveTrail] = useState(false)
-    const [trailLength, setTrailLength] = useState(10)
-    const [spinEnable, setSpinEnable] = useState(false)
-    const [spinSpeed, setSpinSpeed] = useState(1)
-    const [gravityEnable, setGravityEnable] = useState(false)
-    const [growEnable, setGrowEnable] = useState(false)
-    const [growSpeed, setGrowSpeed] = useState(1)
-    const [growMin, setGrowMin] = useState(0.5)
-    const [growMax, setGrowMax] = useState(2)
+    const [_vibrateEnable, setVibrateEnable] = useState(false)
+    const [_vibrateFrequency, setVibrateFrequency] = useState(50)
+    const [_moveTrail, setMoveTrail] = useState(false)
+    const [_trailLength, _setTrailLength] = useState(10)
+    const [_spinEnable, setSpinEnable] = useState(1 < 0) // intentionally falsey
+    const [_spinSpeed, setSpinSpeed] = useState(1)
+    const [_gravityEnable, setGravityEnable] = useState(false)
+    const [_growEnable, setGrowEnable] = useState(false)
+    const [_growSpeed, setGrowSpeed] = useState(1)
+    const [_growMin, setGrowMin] = useState(0.5)
+    const [_growMax, setGrowMax] = useState(2)
 
     // UI State
     const [activeSection, setActiveSection] = useState<string | null>("presets")
@@ -1177,7 +1200,7 @@ export function App() {
         } catch {}
 
         // Use the EXACT pinned shared module URL for MojaveParticles (with @saveId).
-        const COMPONENT_URL = "https://framer.com/m/MojaveParticles-7CfN.js@9z9xEdN2cLrO2YFGlZTN"
+        const COMPONENT_URL = "https://framer.com/m/MojaveParticles-7CfN.js@EJ10nArQpyC3hlEcokV1"
         // NOTE: Always import from remote URL; this plugin never references local code files.
 
         // Introspect the shared module to discover export names and potential local imports
@@ -1324,7 +1347,7 @@ export function App() {
             try {
                 const canSet = await framer.isAllowedTo('setAttributes')
                 if (canSet) {
-                  await framer.setAttributes(instance.id, { width: desiredWidth as any, height: desiredHeight as any, constraints: { autoSize: 'none' as const }, controls: filteredControls })
+                  await framer.setAttributes(instance.id, { width: desiredWidth as any, height: desiredHeight as any, constraints: { autoSize: 'none' as const }, controls: filteredControls } as any)
                   // Reseed kick: briefly bump amount by +1, then restore
                   try {
                     const kick = { ...filteredControls, amount: (amount || 0) + 1 }
@@ -1578,7 +1601,7 @@ export function App() {
                   if (n?.constraints?.autoSize && n.constraints.autoSize !== 'none') {
                     const canSet = await framer.isAllowedTo('setAttributes')
                     if (canSet) {
-                      await framer.setAttributes(instance.id, { width: 800 as any, height: 600 as any, constraints: { autoSize: 'none' as const } })
+                      await framer.setAttributes(instance.id, { width: 800 as any, height: 600 as any, constraints: { autoSize: 'none' as const } } as any)
                     } else {
                       console.warn('[Permissions] Skipped autosize correction; permission denied')
                     }
@@ -2076,7 +2099,9 @@ export function App() {
                         height: "120px",
                         border: "1px solid var(--framer-color-border, #444)",
                         borderRadius: "4px",
-                        background: backdrop || "#1a1a1a",
+                        // Let the canvas drawing control background + opacity.
+                        // Keep the DOM background transparent so the opacity slider works.
+                        background: "transparent",
                         overflow: "hidden"
                     }}
                 />
