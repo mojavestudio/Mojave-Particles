@@ -1200,7 +1200,7 @@ export function App() {
         } catch {}
 
         // Use the EXACT pinned shared module URL for MojaveParticles (with @saveId).
-        const COMPONENT_URL = "https://framer.com/m/MojaveParticles-7CfN.js@EJ10nArQpyC3hlEcokV1"
+        const COMPONENT_URL = "https://framer.com/m/MojaveParticles-7CfN.js@O1DTciUKhtS5QIRRx9vz"
         // NOTE: Always import from remote URL; this plugin never references local code files.
 
         // Introspect the shared module to discover export names and potential local imports
