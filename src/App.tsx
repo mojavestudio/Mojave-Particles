@@ -205,7 +205,7 @@ function verifyAccessJSONP(
                 console.error("🚨 SPREADSHEET COLUMN MISSING: 'Framer User ID'");
                 if (__isLocal) {
                     dlog("Add a 'Framer User ID' header at the end of Row 1, then redeploy your Apps Script web app:")
-                    dlog("Endpoint:", "https://script.google.com/a/macros/mojavestud.io/s/AKfycbwWTayUzln5GbgKK1F04jmPeTt3XOULSja1_rWVbiLbYbdQa1xqQkFnV7kvqbqWtVia/exec")
+                    dlog("Endpoint:", "https://script.google.com/macros/s/AKfycbyZGWKLqUmZWBrBk-kUmndlLyvWzbDaz62O6OpsApKQ-lbWVjtZIED-aivmDQOht6Fs/exec")
                 }
             }
 
@@ -217,7 +217,7 @@ function verifyAccessJSONP(
         };
 
         // Updated endpoint with binding support (latest deployment)
-        const base = "https://script.google.com/a/macros/mojavestud.io/s/AKfycbyZGWKLqUmZWBrBk-kUmndlLyvWzbDaz62O6OpsApKQ-lbWVjtZIED-aivmDQOht6Fs/exec";
+        const base = "https://script.google.com/macros/s/AKfycbyZGWKLqUmZWBrBk-kUmndlLyvWzbDaz62O6OpsApKQ-lbWVjtZIED-aivmDQOht6Fs/exec";
         const params = new URLSearchParams({
             email,
             access_code: accessCode,
@@ -364,9 +364,10 @@ export function App() {
             if (session.projectName) setProjectName(session.projectName)
             setShowLogin(false)
         } else {
-            // No valid session → ensure state is clean and force UI to show login
+            // No valid session → show Welcome (home) by default.
+            // If a fresh auth is explicitly required (after logout/reset), show login form.
             setIsAuthenticated(false)
-            setShowLogin(true)
+            setShowLogin(forceFresh)
         }
     }
 
