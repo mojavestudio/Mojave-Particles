@@ -11,15 +11,46 @@ function dlog(...args: any[]) {
   if (__isLocal) console.log(...args)
 }
 
+// Comma-only parsing helpers
+function parseCommaItems(value: unknown): string[] {
+  const raw = (typeof value === 'string') ? value : Array.isArray(value) ? value.join(',') : String(value ?? '')
+  const s = raw.trim()
+  if (!s) return []
+  if (!s.includes(',')) return [s]
+  return s.split(',').map(t => t.trim()).filter(Boolean)
+}
+
+// Prepare text for remote module that may split by graphemes when no comma exists.
+// Strategy: always enforce comma semantics so the remote treats each token as a unit.
+// - Replace inner spaces with NBSP inside each token,
+// - If the original input had no comma, append a trailing comma to force comma-mode upstream.
+function textForRemoteFromCommaItems(value: unknown): string {
+  const raw = (typeof value === 'string') ? value : Array.isArray(value) ? value.join(',') : String(value ?? '')
+  const hadComma = raw.includes(',')
+  const items = parseCommaItems(raw)
+  const prepared = (items.length ? items : [raw])
+    .map(it => it.trim())
+    .filter(Boolean)
+    .map(it => it.replace(/\s+/g, '\u00A0'))
+    .join(',')
+  // If there was no comma, force comma mode by appending a trailing comma (will be filtered out upstream)
+  return hadComma ? prepared : (prepared ? prepared + ',' : prepared)
+}
+
 // Emoji sprite helper available across preview routines
-function makeEmojiSprite(glyph: string, drawSize: number) {
+function makeEmojiSprite(glyph: string, drawSize: number, fillCss?: string) {
   const dpr = Math.max(1, (typeof window !== 'undefined' && (window as any).devicePixelRatio) || 1)
   const fontSize = Math.max(4, Math.floor(drawSize * 2))
   const pad = Math.ceil(fontSize * 0.4)
-  const cw = fontSize + pad * 2
+  if (typeof document === 'undefined') return null
+  // Measure width first
+  const probe = document.createElement('canvas')
+  const pctx = probe.getContext('2d')!
+  pctx.font = `${fontSize}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, Arial`
+  const textW = Math.max(1, Math.ceil(pctx.measureText(String(glyph)).width))
+  const cw = textW + pad * 2
   const ch = fontSize + pad * 2
-  const off = typeof document !== 'undefined' ? document.createElement('canvas') : null
-  if (!off) return null
+  const off = document.createElement('canvas')
   off.width = Math.ceil(cw * dpr)
   off.height = Math.ceil(ch * dpr)
   const octx = off.getContext('2d')!
@@ -28,7 +59,8 @@ function makeEmojiSprite(glyph: string, drawSize: number) {
   octx.textAlign = 'center'
   octx.textBaseline = 'middle'
   octx.font = `${fontSize}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, Arial`
-  octx.fillText(glyph, cw / 2, ch / 2)
+  if (fillCss) octx.fillStyle = fillCss
+  octx.fillText(String(glyph), cw / 2, ch / 2)
   return off
 }
 
@@ -327,6 +359,8 @@ export function App() {
         // 1) try local fast path
         // Respect a force-fresh flag (set after logout/tests)
         const forceFresh = localStorage.getItem(SESSION_FORCE_FRESH_KEY) === "1"
+        // Consume the flag so it only forces Login once
+        try { localStorage.removeItem(SESSION_FORCE_FRESH_KEY) } catch {}
         let session: any | null = forceFresh ? null : getSessionFromLocal()
 
         // 2) try user-scoped plugin data
@@ -537,7 +571,8 @@ export function App() {
                 setOpacityType("Value")
                 setOpacityValue(1)
                 setShapeType("text")
-                setShapeText("⭐✨🌟💫🌙☀☾🪐")
+                // Use comma-separated emojis so each renders as an individual token
+                setShapeText("⭐, ✨, 🌟, 💫, 🌙, ☀, ☾, 🪐")
                 setGlowEnable(true)
                 setGlowIntensity(0.5)
                 setGlowSize(3)
@@ -929,7 +964,7 @@ export function App() {
         const accessCodeValue = accessCodeRef.current?.value || ""
         
         if (!emailValue || !accessCodeValue) {
-            setVerificationError("Please enter both email and access code")
+            setVerificationError("Please enter both email and invoice number")
             return
         }
 
@@ -1094,7 +1129,7 @@ export function App() {
         const __dpr = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1
         const inferredConnectWidth = Math.max(1, Math.round(Math.min(2, __dpr))) // 1 on SDR, 2 on Retina
         const connectColorStable = connectColor || "#ffffff"
-        const controls = {
+            const controls = {
             backdrop,
             backgroundOpacity,
             color: useMultipleColors ? colors[0] : color,
@@ -1104,12 +1139,8 @@ export function App() {
             opacity: opacityType === "Range" ? { type: opacityType, min: opacityMin, max: opacityMax } : { type: opacityType, value: opacityValue },
             shape: {
                 type: shapeType,
-                text:
-                    typeof shapeText === "string"
-                        ? shapeText
-                        : Array.isArray(shapeText)
-                        ? shapeText.join("")
-                        : String(shapeText ?? ""),
+                // Force comma-separated semantics for remote component: preserve spaces within each comma token
+                text: textForRemoteFromCommaItems(shapeText),
             },
             move: { 
                 enable: moveEnable, 
@@ -1201,7 +1232,7 @@ export function App() {
         } catch {}
 
         // Use the EXACT pinned shared module URL for MojaveParticles (with @saveId).
-        const COMPONENT_URL = "https://framer.com/m/MojaveParticles-7CfN.js@O1DTciUKhtS5QIRRx9vz"
+        const COMPONENT_URL = "https://framer.com/m/MojaveParticles-7CfN.js@VA8WovwbQK9I62j1VLGE"
         // NOTE: Always import from remote URL; this plugin never references local code files.
 
         // Introspect the shared module to discover export names and potential local imports
@@ -1702,21 +1733,26 @@ export function App() {
             const ctx = canvas.getContext("2d")
             if (!ctx) return
 
-            // Grapheme-safe emoji segmentation so ZWJ/skin tones/flags don't split
+            // Parse text/emoji list as comma-separated only. No comma -> single token.
+            // Convert NBSP back to regular spaces.
             function toEmojiArray(input?: string) {
                 if (!input) return []
-                try {
-                    // @ts-ignore
-                    const seg = new (Intl as any).Segmenter(undefined, { granularity: "grapheme" })
-                    // @ts-ignore
-                    return Array.from(seg.segment(String(input))).map((s: any) => s.segment).filter(Boolean)
-                } catch {
-                    return [...String(input)]
+                const raw = String(input).trim()
+                if (!raw) return []
+                if (raw.includes(',')) {
+                    return raw
+                        .split(',')
+                        .map(s => s.trim().replace(/\u00A0/g, ' '))
+                        .filter(Boolean)
                 }
+                return [raw.replace(/\u00A0/g, ' ')]
             }
 
-            canvas.width = previewWidth
-            canvas.height = previewHeight
+            // HiDPI canvas for crisp preview
+            const dpr = Math.max(1, window.devicePixelRatio || 1)
+            canvas.width = Math.ceil(previewWidth * dpr)
+            canvas.height = Math.ceil(previewHeight * dpr)
+            try { (ctx as any).setTransform(dpr, 0, 0, dpr, 0, 0) } catch { ctx.scale(dpr, dpr) }
             // Hover listeners for preview interactions
             const onMove = (e: MouseEvent) => {
                 const rect = canvas.getBoundingClientRect()
@@ -1738,11 +1774,17 @@ export function App() {
                 const emojiList = shapeType === "text" ? toEmojiArray(String(shapeText || "")) : []
                 const fallbackEmoji = ["⭐","✨","🌟","💫","🌙","☀","☾","🪐"]
 
-                function makeEmojiSprite(glyph: string, drawSize: number) {
+                function makeEmojiSprite(glyph: string, drawSize: number, fillCss?: string) {
                     const dpr = Math.max(1, window.devicePixelRatio || 1)
                     const fontSize = Math.max(4, Math.floor(drawSize * 2))
                     const pad = Math.ceil(fontSize * 0.4)
-                    const cw = fontSize + pad * 2
+                    // Measure text width first to size offscreen canvas appropriately
+                    const probe = document.createElement('canvas')
+                    const pctx = probe.getContext('2d')!
+                    const fontStack = 'system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji'
+                    pctx.font = `${fontSize}px ${fontStack}`
+                    const textW = Math.max(1, Math.ceil(pctx.measureText(String(glyph)).width))
+                    const cw = textW + pad * 2
                     const ch = fontSize + pad * 2
                     const off = document.createElement('canvas')
                     off.width = Math.ceil(cw * dpr)
@@ -1752,8 +1794,9 @@ export function App() {
                     octx.clearRect(0, 0, cw, ch)
                     octx.textAlign = 'center'
                     octx.textBaseline = 'middle'
-                    octx.font = `${fontSize}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, Arial`
-                    octx.fillText(glyph, cw / 2, ch / 2)
+                    octx.font = `${fontSize}px ${fontStack}`
+                    if (fillCss) octx.fillStyle = fillCss
+                    octx.fillText(String(glyph), cw / 2, ch / 2)
                     return off
                 }
 
@@ -1809,7 +1852,7 @@ export function App() {
 
                     // For emoji preset, deterministically pick emoji per particle, fallback if none
                     const pickedEmoji = emojiList.length ? emojiList[i % emojiList.length] : fallbackEmoji[Math.floor(Math.random() * fallbackEmoji.length)]
-                    const sprite = (shapeType === 'text') ? makeEmojiSprite(pickedEmoji, particleSize) : undefined
+                    const sprite = (shapeType === 'text') ? makeEmojiSprite(pickedEmoji, particleSize, particleColor) : undefined
                     particles.push({
                         x: Math.random() * previewWidth,
                         y: Math.random() * previewHeight,
@@ -2027,14 +2070,17 @@ export function App() {
                             ctx.closePath()
                             break
                         case "text": {
-                            const drawSize = renderSize * 2
+                            const drawH = renderSize * 2
                             if (!particle.sprite) {
-                                const glyph = (shapeType === 'text') ? (particle.emoji || shapeText || "●") : (shapeText || "●")
-                                particle.sprite = makeEmojiSprite(glyph, renderSize)
+                                const glyph = (shapeType === 'text') ? (particle.emoji || shapeText || '●') : (shapeText || '●')
+                                particle.sprite = makeEmojiSprite(glyph, renderSize, particle.color)
                             }
+                            const spr = particle.sprite
+                            const ratio = (spr && spr.height > 0) ? (spr.width / spr.height) : 1
+                            const drawW = Math.max(1, drawH * ratio)
                             ctx.imageSmoothingEnabled = true
-                            // Draw at subpixel positions for smooth motion
-                            ctx.drawImage(particle.sprite, particle.x - drawSize / 2, particle.y - drawSize / 2, drawSize, drawSize)
+                            try { (ctx as any).imageSmoothingQuality = 'high' } catch {}
+                            ctx.drawImage(spr, particle.x - drawW / 2, particle.y - drawH / 2, drawW, drawH)
                             ctx.restore()
                             return
                         }
@@ -2388,15 +2434,19 @@ export function App() {
                     marginBottom: "6px",
                     color: "var(--framer-color-text-secondary, #888)"
                 }}>
-                    Access Code
+                    Invoice Number
                 </label>
                 <input
                     ref={accessCodeRef}
                     type="text"
                     defaultValue=""
-                    placeholder="MJVE-PLGN-XXXX-XXXX-XXXX"
+                    placeholder="000009-001"
                     onChange={(e) => {
-                        e.target.value = e.target.value.toUpperCase()
+                        // Normalize to 6 digits, hyphen, 3 digits
+                        const digits = e.target.value.replace(/\D+/g, '').slice(0, 9)
+                        const left = digits.slice(0, 6).padStart(6, '0')
+                        const right = digits.slice(6, 9).padStart(3, '0')
+                        e.target.value = left + (right ? '-' + right : '')
                     }}
                     style={{
                         width: "100%",
@@ -2408,7 +2458,7 @@ export function App() {
                         fontSize: "14px",
                         fontFamily: "SF Mono, Monaco, monospace",
                         boxSizing: "border-box",
-                        textTransform: "uppercase",
+                        textTransform: "none",
                         outline: "none",
                         transition: "border-color 0.2s",
                         letterSpacing: "0.5px"
@@ -2464,7 +2514,7 @@ export function App() {
                 marginBottom: "10px"
             }}>
                 <strong style={{ color: "var(--framer-color-text, #fff)" }}>Need help?</strong><br />
-                Your access code was sent to your email after purchase. Check your spam folder if you can't find it.
+                Your invoice number was sent to your email after purchase. Check your spam folder if you can't find it.
             </div>
 
             {/* Lightweight purchase hyperlink under the help box */}
@@ -2854,7 +2904,7 @@ export function App() {
                                 type="text" 
                                 value={shapeText} 
                                 onChange={(e) => setShapeText(e.target.value)}
-                                placeholder="Enter text or emoji..."
+                                placeholder="Enter items, separated by commas"
                                 style={{ 
                                     width: "100%", 
                                     padding: 8, 
@@ -2865,6 +2915,11 @@ export function App() {
                                     fontSize: 14
                                 }}
                             />
+                            {/* Debug: show how the input is parsed into items */}
+                            <div style={{ marginTop: 6, fontSize: 11, color: "#aaa" }}>
+                                Parsed items: {parseCommaItems(shapeText).join(" | ") || "(none)"}
+                            </div>
+                            <div style={{ marginTop: 6, fontSize: 11, opacity: 0.8 }}>Comma-separated items only. Example: Mojave Studio, Design Team, ⭐</div>
                             <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
                                 {emojiPresets.map((e) => (
                                     <button 

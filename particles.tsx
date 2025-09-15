@@ -318,7 +318,22 @@ export default function MojaveParticles({
             opacity: number,
         ) {
             if (normalizedShape.type === "text") {
-                ctx.font = `${size * 2}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, Arial`
+                // Fill text directly with the particle color (emoji fonts ignore fillStyle)
+                const baseCss = resolveCssColor(color) || makeHex(color)
+                let baseA = alphaFromCssColorString(baseCss)
+                if (!isFinite(baseA)) baseA = 1
+                const finalA = Math.max(0, Math.min(1, baseA * opacity))
+                if (/^rgba\(/i.test(baseCss)) {
+                    const parts = baseCss.match(/rgba\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/i)!
+                    ctx.fillStyle = `rgba(${parts[1]}, ${parts[2]}, ${parts[3]}, ${finalA})`
+                } else if (/^rgb\(/i.test(baseCss)) {
+                    const parts = baseCss.match(/rgb\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/i)!
+                    ctx.fillStyle = `rgba(${parts[1]}, ${parts[2]}, ${parts[3]}, ${finalA})`
+                } else {
+                    ctx.fillStyle = hexToRgba(makeHex(baseCss), finalA)
+                }
+                const fontStack = "system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji"
+                ctx.font = `${size * 2}px ${fontStack}`
                 ctx.textAlign = "center"
                 ctx.textBaseline = "middle"
                 ctx.fillText((normalizedShape.text as any) || "⭐", x, y)
@@ -360,19 +375,22 @@ export default function MojaveParticles({
             return makeHex(c)
         })
 
-        // Grapheme-safe emoji segmentation (handles ZWJ sequences, flags, skin tones)
+        // Parse text/emoji list: use comma-separated items only.
+        // If no comma is present, treat the entire input as a single token.
+        // Convert NBSP back to regular spaces within each token.
         function toEmojiArray(input?: string) {
             if (!input) return []
-            try {
-                // Prefer Intl.Segmenter for proper grapheme clusters
-                // @ts-ignore
-                const seg = new (Intl as any).Segmenter(undefined, { granularity: "grapheme" })
-                // @ts-ignore
-                return Array.from(seg.segment(String(input))).map((s: any) => s.segment).filter(Boolean)
-            } catch {
-                // Fallback: spread by code points (works for surrogate pairs, not ZWJ)
-                return [...String(input)]
+            const raw = String(input).trim()
+            if (!raw) return []
+            if (raw.includes(',')) {
+                return raw
+                    .split(',')
+                    .map(s => s.trim().replace(/\u00A0/g, ' '))
+                    .filter(Boolean)
             }
+            // Single item: do not split into words or graphemes.
+            // Convert NBSP back to regular spaces.
+            return [raw.replace(/\u00A0/g, ' ')]
         }
         const emojiList = normalizedShape.type === "text" ? toEmojiArray(String(normalizedShape.text || "")) : []
 
@@ -422,19 +440,26 @@ export default function MojaveParticles({
                     p.vy *= sf
                     p.size *= sf
                     if (p.emoji) {
-                        p.sprite = makeEmojiSprite(p.emoji, p.size)
+                        p.sprite = makeEmojiSprite(p.emoji, p.size, p.color)
                     }
                 }
             }
         }
 
         // Emoji sprite for smooth motion (avoids glyph grid snapping)
-        function makeEmojiSprite(glyph: string, drawSize: number) {
+        function makeEmojiSprite(glyph: string, drawSize: number, fillCss?: string) {
             const dpr = Math.max(1, lastDprRef.current || window.devicePixelRatio || 1)
             const fontSize = Math.max(4, Math.floor(drawSize * 2))
             const pad = Math.ceil(fontSize * 0.4)
-            const cw = fontSize + pad * 2
+            // First, measure the text width using a temporary context
+            const probe = document.createElement('canvas')
+            const pctx = probe.getContext('2d')!
+            const fontStack = "system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji"
+            pctx.font = `${fontSize}px ${fontStack}`
+            const textW = Math.max(1, Math.ceil(pctx.measureText(String(glyph)).width))
+            const cw = textW + pad * 2
             const ch = fontSize + pad * 2
+            // Create the final HiDPI canvas with measured dimensions
             const off = document.createElement('canvas')
             off.width = Math.ceil(cw * dpr)
             off.height = Math.ceil(ch * dpr)
@@ -443,8 +468,11 @@ export default function MojaveParticles({
             octx.clearRect(0, 0, cw, ch)
             octx.textAlign = 'center'
             octx.textBaseline = 'middle'
-            octx.font = `${fontSize}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, Arial`
-            octx.fillText(glyph, cw / 2, ch / 2)
+            octx.font = `${fontSize}px ${fontStack}`
+            if (fillCss) {
+                octx.fillStyle = fillCss
+            }
+            octx.fillText(String(glyph), cw / 2, ch / 2)
             return off
         }
 
@@ -534,7 +562,7 @@ export default function MojaveParticles({
                         baseOpacity: particleOpacity,
                         twinklePhase: Math.random() * Math.PI * 2,
                         emoji: particleEmoji,
-                        sprite: particleEmoji ? makeEmojiSprite(particleEmoji, particleSize) : undefined,
+                        sprite: particleEmoji ? makeEmojiSprite(particleEmoji, particleSize, c) : undefined,
                     })
                     placed++
                 }
@@ -629,10 +657,14 @@ export default function MojaveParticles({
                 ctx.save()
                 ctx.globalAlpha = p.baseOpacity
                 if (normalizedShape.type === "text") {
-                    const drawSize = p.size * 2
-                    if (!p.sprite) p.sprite = makeEmojiSprite(p.emoji || "⭐", p.size)
+                    const drawH = p.size * 2
+                    if (!p.sprite) p.sprite = makeEmojiSprite(p.emoji || "⭐", p.size, p.color)
+                    const spr = p.sprite
+                    const ratio = (spr && spr.height > 0) ? (spr.width / spr.height) : 1
+                    const drawW = Math.max(1, drawH * ratio)
                     ctx.imageSmoothingEnabled = true
-                    ctx.drawImage(p.sprite, p.x - drawSize / 2, p.y - drawSize / 2, drawSize, drawSize)
+                    ;(ctx as any).imageSmoothingQuality = 'high'
+                    ctx.drawImage(spr, p.x - drawW / 2, p.y - drawH / 2, drawW, drawH)
                 } else {
                     renderParticleShape(ctx, p.x, p.y, p.size, p.color, p.baseOpacity)
                 }
@@ -768,10 +800,14 @@ export default function MojaveParticles({
                 }
                 ctx.globalAlpha = currentOpacity
                 if (normalizedShape.type === "text") {
-                    const drawSize = renderSize * 2
-                    if (!p.sprite) p.sprite = makeEmojiSprite(p.emoji || "⭐", renderSize)
+                    const drawH = renderSize * 2
+                    if (!p.sprite) p.sprite = makeEmojiSprite(p.emoji || "⭐", renderSize, p.color)
+                    const spr = p.sprite
+                    const ratio = (spr && spr.height > 0) ? (spr.width / spr.height) : 1
+                    const drawW = Math.max(1, drawH * ratio)
                     ctx.imageSmoothingEnabled = true
-                    ctx.drawImage(p.sprite, p.x - drawSize / 2, p.y - drawSize / 2, drawSize, drawSize)
+                    ;(ctx as any).imageSmoothingQuality = 'high'
+                    ctx.drawImage(spr, p.x - drawW / 2, p.y - drawH / 2, drawW, drawH)
                 } else {
                     renderParticleShape(ctx, p.x, p.y, renderSize, p.color, currentOpacity)
                 }
